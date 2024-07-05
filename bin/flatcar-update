@@ -267,9 +267,19 @@ tee -a /tmp/response > /dev/null <<-EOF
 	</updatecheck><event status="ok"></event></app></response>
 EOF
 
+mkfifo /tmp/response-server-pipe
+response_server() {
+    local len
+    len=$(stat --printf='%s\n' /tmp/response)
+    while read -r; do
+        echo -en 'HTTP/1.1 200 OK\ncontent-type: text/xml\ncontent-length: '"${len}"'\n\n'
+        cat /tmp/response
+    done </tmp/response-server-pipe | nc -lk "$LISTEN_PORT_1" >/tmp/response-server-pipe
+}
+
 true > /tmp/payload-server-pids
-trap "umount /usr/share/update_engine/update-payload-key.pub.pem 2> /dev/null || true; rm -f /tmp/response /tmp/payload-server ; cat /tmp/payload-server-pids | xargs -r kill ; rm -f /tmp/payload-server-pids" EXIT INT
-ncat --keep-open -c "echo -en 'HTTP/1.1 200 OK\ncontent-type: text/xml\ncontent-length: $(stat --printf='%s\n' /tmp/response)\n\n'; cat /tmp/response" -l "$LISTEN_PORT_1" &
+trap "umount /usr/share/update_engine/update-payload-key.pub.pem 2> /dev/null || true; rm -f /tmp/response /tmp/payload-server ; cat /tmp/payload-server-pids | xargs -r kill ; rm -f /tmp/payload-server-pids ; rm -f /tmp/response-server-pipe" EXIT INT
+response_server &
 CHILDPID="$!"
 echo "${CHILDPID}" >> /tmp/payload-server-pids
 
